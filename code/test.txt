@@ -1,0 +1,238 @@
+#......................原始版本..............................#
+import torch
+import torch.nn as nn
+from net import vgg16
+from torch.utils.data import DataLoader#工具取黑盒子，用函数来提取数据集中的数据（小批次）
+from data import *
+'''数据集'''
+annotation_path='cls_train.txt'#读取数据集生成的文件
+with open(annotation_path,'r') as f:
+    lines=f.readlines()
+np.random.seed(10101)#函数用于生成指定随机数
+np.random.shuffle(lines)#数据打乱
+np.random.seed(None)
+num_val=int(len(lines)*0.2)#十分之一数据用来测试
+num_train=len(lines)-num_val
+#输入图像大小
+input_shape=[224,224]   #导入图像大小
+train_data=DataGenerator(lines[:num_train],input_shape,True)
+val_data=DataGenerator(lines[num_train:],input_shape,False)
+val_len=len(val_data)
+print(val_len)#返回测试集长度
+# 取黑盒子工具
+"""加载数据"""
+gen_train=DataLoader(train_data,batch_size=4)#训练集batch_size读取小样本，规定每次取多少样本
+gen_test=DataLoader(val_data,batch_size=4)#测试集读取小样本
+'''构建网络'''
+device=torch.device('cuda'if torch.cuda.is_available() else "cpu")#电脑主机的选择
+net=vgg16(True, progress=True,num_classes=2)#定于分类的类别
+net.to(device)
+'''选择优化器和学习率的调整方法'''
+lr=0.0001#定义学习率
+optim=torch.optim.Adam(net.parameters(),lr=lr)#导入网络和学习率
+sculer=torch.optim.lr_scheduler.StepLR(optim,step_size=1)#步长为1的读取
+'''训练'''
+epochs=20#读取数据次数，每次读取顺序方式不同
+for epoch in range(epochs):
+    total_train=0 #定义总损失
+    for data in gen_train:
+        img,label=data
+        with torch.no_grad():
+            img =img.to(device)
+            label=label.to(device)
+        optim.zero_grad()
+        output=net(img)
+        train_loss=nn.CrossEntropyLoss()(output,label).to(device)
+        train_loss.backward()#反向传播
+        optim.step()#优化器更新
+        total_train+=train_loss #损失相加
+    sculer.step()
+    total_test=0#总损失
+    total_accuracy=0#总精度
+    for data in gen_test:
+        img,label =data #图片转数据
+        with torch.no_grad():
+            img=img.to(device)
+            label=label.to(device)
+            optim.zero_grad()#梯度清零
+            out=net(img)#投入网络
+            test_loss=nn.CrossEntropyLoss()(out,label).to(device)
+            total_test+=test_loss#测试损失，无反向传播
+            accuracy=((out.argmax(1)==label).sum()).clone().detach().cpu().numpy()#正确预测的总和比测试集的长度，即预测正确的精度
+            total_accuracy+=accuracy
+    print("训练集上的损失：{}".format(total_train))
+    print("测试集上的损失：{}".format(total_test))
+    print("测试集上的精度：{:.1%}".format(total_accuracy/val_len))#百分数精度，正确预测的总和比测试集的长度
+
+    torch.save(net.state_dict(),"DogandCat{}.pth".format(epoch+1))
+    print("模型已保存")
+
+# ...............第二次代码更迭：CPU版本................................#
+import torch
+import torch.nn as nn
+from net import vgg16
+from torch.utils.data import DataLoader#工具取黑盒子，用函数来提取数据集中的数据（小批次）
+from data import *
+'''数据集'''
+annotation_path='cls_train.txt'#读取数据集生成的文件
+with open(annotation_path,'r') as f:
+    lines=f.readlines()
+np.random.seed(10101)#函数用于生成指定随机数
+np.random.shuffle(lines)#数据打乱
+np.random.seed(None)
+num_val=int(len(lines)*0.2)#十分之一数据用来测试
+num_train=len(lines)-num_val
+#输入图像大小
+input_shape=[224,224]   #导入图像大小
+train_data=DataGenerator(lines[:num_train],input_shape,True)
+val_data=DataGenerator(lines[num_train:],input_shape,False)
+val_len=len(val_data)
+print(val_len)#返回测试集长度
+# 取黑盒子工具
+"""加载数据"""
+gen_train=DataLoader(train_data,batch_size=2)#训练集batch_size读取小样本，规定每次取多少样本  4
+gen_test=DataLoader(val_data,batch_size=2)#测试集读取小样本   4
+'''构建网络'''
+device = torch.device("cpu")#电脑主机的选择   device=torch.device('cuda'if torch.cuda.is_available() else "cpu"
+net=vgg16(True, progress=True,num_classes=2)#定于分类的类别
+net.to(device)
+'''选择优化器和学习率的调整方法'''
+optim=torch.optim.Adam(net.parameters(),lr=lr)#导入网络和学习率
+sculer=torch.optim.lr_scheduler.StepLR(optim,step_size=2)#步长为1的读取   1
+'''训练'''
+epochs=20#读取数据次数，每次读取顺序方式不同
+
+# 在训练循环中
+for epoch in range(epochs):
+    total_train = 0  # 定义总训练损失
+    for data in gen_train:
+        img, label = data
+        with torch.no_grad():
+            img = img.to(device)
+            label = label.to(device)
+
+        optim.zero_grad()
+        output = net(img)
+        train_loss = nn.CrossEntropyLoss()(output, label).to(device)
+        train_loss.backward()  # 反向传播
+        optim.step()  # 优化器更新
+        total_train += float(train_loss)  # 损失累加 total_loss += float(loss) .......................
+
+
+    sculer.step()
+
+    # 释放训练过程中产生的不需要的 GPU 资源
+    torch.cuda.empty_cache()
+
+    total_test = 0  # 总测试损失
+    total_accuracy = 0  # 总准确度
+    for data in gen_test:
+        img, label = data
+        with torch.no_grad():
+            img = img.to(device)
+            label = label.to(device)
+
+            out = net(img)
+            test_loss = nn.CrossEntropyLoss()(out, label).to(device)
+            total_test += float(test_loss)  # 测试损失累加        ..............
+
+            accuracy = (out.argmax(1) == label).sum().item()  # 计算准确度
+            total_accuracy += accuracy
+
+    print("训练集上的损失：{}".format(total_train))
+    print("测试集上的损失：{}".format(total_test))
+    print("测试集上的精度：{:.1%}".format(total_accuracy / val_len))
+
+    # 释放测试过程中产生的不需要的 GPU 资源
+    torch.cuda.empty_cache()
+
+    torch.save(net.state_dict(), "DogandCat_cpu{}.pth".format(epoch + 1))
+    print("模型已保存")
+
+#...................................predict..................................#
+
+from torchvision import transforms
+from PIL import Image
+import matplotlib.pyplot as plt
+import torch
+import torch.nn.functional as F
+from net import vgg16
+test_pth=r'picture_test\A70.jpg'#'E:\VGG\VGGnet_cat\project1\train\dog\dog.66.jpg'#'E:\xiangmu\VGGNet\train\cat\cat.1.jpg'#设置可以检测的图像
+test=Image.open(test_pth)
+'''处理图片'''
+transform=transforms.Compose([transforms.Resize((224,224)),transforms.ToTensor()])
+image=transform(test)
+'''加载网络'''
+device=torch.device("cuda" if torch.cuda.is_available() else "cpu")#CPU与GPU的选择   device = torch.device("cpu")
+net =vgg16()#输入网络
+model=torch.load(r"E:\VGG\VGGnet_cat\project1\AKR_A42.pth",map_location=device) #已训练完成的结果权重输入#E:\xiangmu\VGGNet\road surface identification.13.pth
+net.load_state_dict(model)#模型导入
+net.eval()#设置为推测模式
+image=torch.reshape(image,(1,3,224,224))#四维图形，RGB三个通
+with torch.no_grad():
+    out=net(image)
+out=F.softmax(out,dim=1)#softmax 函数确定范围
+out=out.data.cpu().numpy()
+print(out)
+a=int(out.argmax(1))#输出最大值位置
+plt.figure()
+list=['1','0']
+plt.suptitle("Classes:{}:{:.1%}".format(list[a],out[0,a]))#输出最大概率的道路类型
+plt.imshow(test)
+plt.show()
+
+#..................predict 检测文件夹................................#
+import os
+
+from torchvision import transforms
+from PIL import Image
+import matplotlib.pyplot as plt
+import torch
+import torch.nn.functional as F
+from net import vgg16  # 请确保导入你的VGG网络实现
+
+# 设置文件夹路径
+folder_path = r'E:\VGG\VGGnet_cat\project1\picture_test'
+
+# 处理图片的函数
+def process_image(image_path):
+    transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()])
+    image = Image.open(image_path)
+    image = transform(image)
+    return image
+
+# 加载网络
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+net = vgg16()
+model = torch.load(r"E:\VGG\VGGnet_cat\project1\AKR_A42.pth", map_location=device)
+net.load_state_dict(model)
+net.eval()
+
+# 设置子图的行和列数
+num_rows = 2
+num_cols = 2
+num_images = num_rows * num_cols
+
+# 循环遍历文件夹中的图像
+fig, axs = plt.subplots(num_rows, num_cols, figsize=(8, 8))
+
+for i, filename in enumerate(os.listdir(folder_path)[:num_images]):
+    if filename.endswith(('.jpg', '.jpeg', '.png')):  # 确保文件是图像文件
+        image_path = os.path.join(folder_path, filename)
+        image = process_image(image_path)
+        image = torch.reshape(image, (1, 3, 224, 224))
+
+        with torch.no_grad():
+            out = net(image)
+
+        out = F.softmax(out, dim=1)
+        out = out.data.cpu().numpy()
+        a = int(out.argmax(1))
+
+        row = i // num_cols
+        col = i % num_cols
+        axs[row, col].imshow(Image.open(image_path))
+        axs[row, col].set_title("Classes:{}:{:.1%}".format(list[a], out[0, a]))
+        axs[row, col].axis('off')
+
+plt.show()
